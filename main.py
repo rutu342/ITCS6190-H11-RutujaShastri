@@ -94,9 +94,21 @@ def task1_pipelines():
 
     # full pipeline
     categorical, numeric = feature_columns(trainDF)
-    # TODO: indexer, encoder, assembler, LinearRegression; fit the Pipeline on trainDF;
-    #       results.append(evaluate("full", <predictions on testDF>)); save the model
-    return None
+    indexed = [f"{c}_idx" for c in categorical]
+    encoded = [f"{c}_ohe" for c in categorical]
+    indexer = StringIndexer(inputCols=categorical, outputCols=indexed,
+                            handleInvalid="skip")
+    encoder = OneHotEncoder(inputCols=indexed, outputCols=encoded)
+    assembler = VectorAssembler(inputCols=encoded + numeric, outputCol="features")
+    full_lr = LinearRegression(featuresCol="features", labelCol="price")
+    full_model = Pipeline(stages=[indexer, encoder, assembler, full_lr]).fit(trainDF)
+    full_predictions = full_model.transform(testDF)
+    results.append(evaluate("full", full_predictions))
+    full_predictions.select("neighbourhood_cleansed", "room_type", "bedrooms",
+                            "price", "prediction").show(5, truncate=False)
+    full_model.write().overwrite().save(model_dir)
+    print(f"Full PipelineModel saved to {model_dir}")
+    return results
 
 
 # ---------------------------------------------------------------- Task 2: score with the saved model
@@ -107,14 +119,33 @@ def task2_score():
     output/task2/predictions. Print the stage class names of the loaded model and the
     RMSE of its predictions. Return the DataFrame you wrote.
     """
-    # TODO
-    return None
+    model = PipelineModel.load(model_dir)
+    print("Stages:", [stage.__class__.__name__ for stage in model.stages])
+    testDF = spark.read.parquet(f"{data_dir}/split/test")
+    predictions = model.transform(testDF)
+    test_count, scored_count = testDF.count(), predictions.count()
+    print(f"Scored {scored_count} of {test_count} test listings")
+    rmse = rmse_eval.evaluate(predictions)
+    print(f"loaded full model RMSE {rmse:.1f}")
+
+    output = predictions.select(
+        "neighbourhood_cleansed", "room_type", "bedrooms", "price",
+        sround(col("prediction"), 1).alias("prediction"),
+    )
+    output.coalesce(1).write.mode("overwrite").option("header", True).csv(
+        f"{out_dir}/predictions"
+    )
+    output.show(5, truncate=False)
+    print(f"Predictions saved to {out_dir}/predictions")
+    return output
 
 
 # ---------------------------------------------------------------- main
 if task == "task1":
     result = task1_pipelines()
-    if result: save_metrics(result)
+    if result:
+        save_metrics(result)
+        print(f"Metrics saved to {out_dir}/metrics")
 else:
     result = task2_score()
 if result is None:
