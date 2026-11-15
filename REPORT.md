@@ -8,7 +8,7 @@
 
 ## Seed and commands
 
-Seed used (your student ID): 801484366
+Seed used: 801484366
 
 The existing Spark containers belonged to the A4 workspace, so I replaced those three Spark
 services with this repository's H11 services. The base image also needed a compatible NumPy
